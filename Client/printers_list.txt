@@ -1,0 +1,10 @@
+Found 5 printers:
+----------------------------------------
+ - POS-80
+ - POS-58
+ - OneNote (Desktop)
+ - Microsoft Print to PDF
+ - HP DeskJet 2700 series
+----------------------------------------
+
+Use the exact name above in your print_receipt.py script.
