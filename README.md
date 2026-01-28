@@ -2,8 +2,6 @@
 
 A photo booth system where scanning a QR code triggers a Raspberry Pi camera to capture a photo, sends it to a server for receipt generation, and prints the receipt on a thermal printer.
 
-![Receipt Example](Server/output/receipt_20260128_114524.jpg)
-
 ## Architecture
 
 ```
@@ -225,7 +223,3 @@ sudo reboot
 - flask
 - python-escpos
 - pillow
-
-## License
-
-MIT
