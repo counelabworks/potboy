@@ -1,0 +1,7 @@
+websockets
+pillow
+flask
+qrcode
+pyOpenSSL
+requests
+python-dotenv

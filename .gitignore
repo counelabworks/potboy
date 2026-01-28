@@ -1,0 +1,34 @@
+# Environment variables
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+ENV/
+env/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# SSL certificates (generated)
+server.crt
+server.key
+
+# Output folders (optional - uncomment if you don't want to track these)
+# Server/received_images/
+# Server/output/
+# Server/qr_codes/
+# Client/output/
+# Client/images/

@@ -1,21 +1,24 @@
-from escpos.printer import Win32Raw
+  GNU nano 8.4                                                                                                                                                                print_receipt.py
+from escpos.printer import File
 import sys
 
 # ==========================================
 # CONFIGURATION
 # ==========================================
-# REPLACE THIS with the exact name of your printer from list_printers.py
-PRINTER_NAME = "POS-80"
+
+# Your printer is detected as USB Line Printer at /dev/usb/lp0
+PRINTER_DEVICE = '/dev/usb/lp0'
+
 # ==========================================
 
 
-def print_receipt(printer_name):
+def print_receipt():
     """
-    Sends a receipt to the specified Windows thermal printer using python-escpos.
+    Sends a receipt to the thermal printer using python-escpos.
     """
     try:
-        # Connect to the Windows printer
-        p = Win32Raw(printer_name)
+        # Connect to the printer via file device
+        p = File(PRINTER_DEVICE)
 
         # Initialize printer
         p._raw(b'\x1B\x40')  # ESC @ - Initialize
@@ -47,21 +50,17 @@ def print_receipt(printer_name):
         # Close connection
         p.close()
 
-        print(f"Successfully sent job to printer: {printer_name}")
+        print(f"Successfully printed receipt to {PRINTER_DEVICE}!")
 
     except Exception as e:
-        print(f"Error printing to {printer_name}:")
+        print(f"Error printing receipt:")
         print(e)
         print("\nTroubleshooting:")
-        print("1. Make sure the printer is turned on and connected.")
-        print("2. Check if the PRINTER_NAME matches exactly what's in Windows Settings.")
-        print("3. Ensure you have 'python-escpos' installed: pip install python-escpos")
-        print("4. Try running as Administrator if you get permission errors.")
+        print("1. Check if device exists: ls -la /dev/usb/lp0")
+        print("2. Add permissions: sudo usermod -a -G lp $USER && sudo reboot")
+        print("3. Try running with sudo: sudo python3 print_receipt.py")
 
 
 if __name__ == "__main__":
-    # Allow passing printer name as argument, otherwise use default
-    target_printer = sys.argv[1] if len(sys.argv) > 1 else PRINTER_NAME
-
-    print(f"Attempting to print to: {target_printer}")
-    print_receipt(target_printer)
+    print(f"Attempting to print to {PRINTER_DEVICE}...")
+    print_receipt()

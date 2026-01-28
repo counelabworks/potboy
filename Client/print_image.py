@@ -1,36 +1,37 @@
-from escpos.printer import Win32Raw
+from escpos.printer import File
 import sys
 
 # ==========================================
 # CONFIGURATION
 # ==========================================
-PRINTER_NAME = "POS-80"
+
+# Your printer is detected as USB Line Printer at /dev/usb/lp0
+PRINTER_DEVICE = '/dev/usb/lp0'
+
+# Image settings
 IMAGE_PATH = "image.jpg"
-MAX_WIDTH = 550  # Max dots for 80mm printer (usually 576, keeping safety margin)
+
+# Printer width in pixels (80mm = 576, 58mm = 384)
+PRINTER_WIDTH = 576
+
 # ==========================================
 
 
-def print_image(printer_name, image_path):
+def print_image(image_path):
     """
-    Prints an image to the specified Windows thermal printer using python-escpos.
+    Prints an image to the thermal printer using python-escpos.
     """
     try:
-        # Connect to the Windows printer
-        p = Win32Raw(printer_name)
+        # Connect to the printer via file device
+        p = File(PRINTER_DEVICE)
 
         # Initialize printer
         p._raw(b'\x1B\x40')  # ESC @ - Initialize
 
-        # Center align the image
-        p.set(align='center')
-
         # Print the image - escpos handles all the conversion automatically!
         # impl parameter can be: 'bitImageRaster', 'graphics', or 'bitImageColumn'
-        # Try 'bitImageRaster' first, if it doesn't work try 'graphics'
-        p.image(image_path, impl='bitImageRaster', high_density_vertical=True, high_density_horizontal=True)
-
-        # Reset alignment
-        p.set(align='left')
+        # center=True will center based on PRINTER_WIDTH
+        p.image(image_path, impl='bitImageRaster', high_density_vertical=True, high_density_horizontal=True, center=True)
 
         # Feed and cut
         p.text("\n\n\n")
@@ -39,23 +40,22 @@ def print_image(printer_name, image_path):
         # Close connection
         p.close()
 
-        print(f"Successfully sent image to printer: {printer_name}")
+        print(f"Successfully printed image to {PRINTER_DEVICE}!")
 
     except Exception as e:
-        print(f"Error printing image to {printer_name}:")
+        print(f"Error printing image:")
         print(e)
         print("\nTroubleshooting:")
-        print("1. Make sure the printer is turned on and connected.")
-        print("2. Check if the image file exists:", image_path)
-        print("3. Ensure you have 'python-escpos' and 'pillow' installed.")
+        print("1. Check if device exists: ls -la /dev/usb/lp0")
+        print("2. Add permissions: sudo usermod -a -G lp $USER && sudo reboot")
+        print("3. Try running with sudo: sudo python3 print_image.py")
         print("4. Try different 'impl' values: 'bitImageRaster', 'graphics', 'bitImageColumn'")
 
 
 if __name__ == "__main__":
-    # Allow passing printer name and image as arguments
-    target_printer = sys.argv[1] if len(sys.argv) > 1 else PRINTER_NAME
-    target_image = sys.argv[2] if len(sys.argv) > 2 else IMAGE_PATH
+    # Allow passing image path as argument
+    target_image = sys.argv[1] if len(sys.argv) > 1 else IMAGE_PATH
 
-    print(f"Attempting to print image to: {target_printer}")
+    print(f"Attempting to print image to {PRINTER_DEVICE}...")
     print(f"Image: {target_image}")
-    print_image(target_printer, target_image)
+    print_image(target_image)
