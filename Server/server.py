@@ -56,14 +56,72 @@ def send_to_raspberry_pi(receipt_bytes, filename):
         return False
 
 
+def is_valid_image(data):
+    """Check if the data is a valid image by checking magic bytes."""
+    if len(data) < 8:
+        return False
+    # JPEG: FF D8 FF
+    # PNG: 89 50 4E 47 0D 0A 1A 0A
+    # GIF: 47 49 46 38
+    if data[:3] == b'\xff\xd8\xff':  # JPEG
+        return True
+    if data[:8] == b'\x89PNG\r\n\x1a\n':  # PNG
+        return True
+    if data[:4] == b'GIF8':  # GIF
+        return True
+    return False
+
+
+def decode_image_data(data):
+    """
+    Decode incoming data - handles both raw bytes and base64 encoded.
+    Returns raw image bytes.
+    """
+    # If it's a string, it might be base64
+    if isinstance(data, str):
+        try:
+            decoded = base64.b64decode(data)
+            if is_valid_image(decoded):
+                return decoded
+        except:
+            pass
+        return None
+    
+    # If it's bytes, check if it's raw image or base64 encoded bytes
+    if isinstance(data, bytes):
+        # First check if it's already a valid image
+        if is_valid_image(data):
+            return data
+        
+        # Try decoding as base64
+        try:
+            decoded = base64.b64decode(data)
+            if is_valid_image(decoded):
+                return decoded
+        except:
+            pass
+    
+    return None
+
+
 async def handler(ws):
-    print("📡 Client connected")
+    print("📡 Client connected (Raspberry Pi)")
 
     try:
         while True:
-            # 1. Receive photo
-            photo_bytes = await ws.recv()
-            print(f"📥 Photo received ({len(photo_bytes)} bytes)")
+            # 1. Receive data
+            data = await ws.recv()
+            print(f"📥 Data received ({len(data)} bytes)")
+            
+            # Decode the image (handles base64)
+            photo_bytes = decode_image_data(data)
+            
+            if photo_bytes is None:
+                print(f"❌ Could not decode image data")
+                print(f"   First 50 chars: {data[:50] if isinstance(data, str) else data[:50]}")
+                continue
+            
+            print(f"✅ Image decoded ({len(photo_bytes)} bytes)")
 
             # Save received image
             os.makedirs("received_images", exist_ok=True)
@@ -74,8 +132,12 @@ async def handler(ws):
             print(f"💾 Photo saved: received_images/{photo_name}")
 
             # 2. Generate receipt
-            receipt_bytes = make_receipt(photo_bytes)
-            print("🧾 Receipt generated")
+            try:
+                receipt_bytes = make_receipt(photo_bytes)
+                print("🧾 Receipt generated")
+            except Exception as e:
+                print(f"❌ Error generating receipt: {e}")
+                continue
 
             # 3. Save receipt locally
             os.makedirs("output", exist_ok=True)
@@ -84,12 +146,16 @@ async def handler(ws):
                 f.write(receipt_bytes)
             print(f"💾 Receipt saved: output/{receipt_name}")
 
-            # 4. Send receipt to Raspberry Pi only
-            send_to_raspberry_pi(receipt_bytes, receipt_name)
+            # 4. Send receipt back to Raspberry Pi via WebSocket (base64 encoded)
+            receipt_base64 = base64.b64encode(receipt_bytes)
+            await ws.send(receipt_base64)
+            print("📤 Receipt sent back to Raspberry Pi")
             print("✅ Done processing photo\n")
 
     except websockets.exceptions.ConnectionClosed:
         print("🔌 Client disconnected")
+    except Exception as e:
+        print(f"❌ Handler error: {e}")
 
 
 async def main():

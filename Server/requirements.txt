@@ -5,3 +5,4 @@ qrcode
 pyOpenSSL
 requests
 python-dotenv
+aiohttp

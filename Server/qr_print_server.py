@@ -506,9 +506,43 @@ def index():
     return render_template_string(QR_SCANNER_HTML)
 
 
+def trigger_capture():
+    """Send capture command directly to Raspberry Pi."""
+    import requests
+    import time
+    
+    # Generate unique QR code ID to avoid duplicate detection
+    qr_id = f"CAPTURE_{int(time.time())}"
+    url = f"http://{RASPBERRY_PI_IP}:{RASPBERRY_PI_PORT}/capture?qr={qr_id}"
+    
+    print(f"📷 Triggering capture on Raspberry Pi (qr={qr_id})...")
+    
+    try:
+        response = requests.post(url, timeout=30)
+        result = response.json()
+        
+        if result.get('success'):
+            print(f"✅ Capture triggered: {result.get('message')}")
+            return True, result.get('message', 'Captured!')
+        else:
+            print(f"❌ Capture failed: {result.get('error')}")
+            return False, result.get('error', 'Unknown error')
+            
+    except requests.exceptions.ConnectionError:
+        error = f"Cannot connect to Raspberry Pi at {RASPBERRY_PI_IP}:{RASPBERRY_PI_PORT}"
+        print(f"❌ {error}")
+        return False, error
+    except requests.exceptions.Timeout:
+        # Timeout might mean it's working (capture + print takes time)
+        return True, "Capture command sent (processing...)"
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        return False, str(e)
+
+
 @app.route('/api/print', methods=['POST'])
 def api_print():
-    """API endpoint to receive QR scan data and trigger print."""
+    """API endpoint to receive QR scan data and trigger print or capture."""
     try:
         data = request.get_json()
         qr_content = data.get('qr_content', '').strip()
@@ -517,6 +551,14 @@ def api_print():
             return jsonify({'success': False, 'error': 'No QR content provided'}), 400
         
         print(f"\n📱 Received scan: {qr_content}")
+        
+        # Check for special CAPTURE command
+        if qr_content.upper() == 'CAPTURE':
+            success, message = trigger_capture()
+            if success:
+                return jsonify({'success': True, 'message': message})
+            else:
+                return jsonify({'success': False, 'error': message}), 503
         
         # Find the image
         image_path = find_image(qr_content)
