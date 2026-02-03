@@ -3,6 +3,25 @@ from datetime import datetime
 import io
 
 def make_receipt(photo_bytes):
+    """
+    Process photo and return as receipt.
+    Currently just passes through the image.
+    Uncomment sections below to add receipt elements.
+    """
+    # Load photo from bytes
+    photo = Image.open(io.BytesIO(photo_bytes)).convert("RGB")
+    
+    # Just pass through the image (no resize, no overlay)
+    buf = io.BytesIO()
+    photo.save(buf, format="JPEG", quality=90)
+    return buf.getvalue()
+
+
+def make_receipt_full(photo_bytes):
+    """
+    Full receipt with title, photo, data, and thank you message.
+    Call this instead of make_receipt() if you want the full receipt.
+    """
     # Load photo from bytes
     photo = Image.open(io.BytesIO(photo_bytes)).convert("RGB")
     photo = photo.resize((480, 360))

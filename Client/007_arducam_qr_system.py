@@ -145,6 +145,32 @@ def stop_blinking():
     led.off()
     buzzer.off()
 
+def countdown_beep_async(seconds=5):
+    """Countdown with beeps (runs in background)."""
+    def beep_thread():
+        print(f"⏱️ Countdown: {seconds} seconds...")
+        for i in range(seconds, 0, -1):
+            print(f"   {i}...")
+            if GPIO_ENABLED:
+                led.on()
+                buzzer.on()
+                time.sleep(0.1)
+                led.off()
+                buzzer.off()
+            time.sleep(0.9)
+        
+        print("   📸 CAPTURE!")
+        if GPIO_ENABLED:
+            led.on()
+            buzzer.on()
+            time.sleep(0.3)
+            led.off()
+            buzzer.off()
+    
+    t = threading.Thread(target=beep_thread, daemon=True)
+    t.start()
+    return t
+
 # ==============================
 # LOAD FACE CASCADE
 # ==============================
@@ -189,18 +215,20 @@ elif check_v4l2_camera():
 else:
     print("❌ No camera detected!")
 
-def capture_with_rpicam(output_path):
+def capture_with_rpicam(output_path, width=None, height=None, autofocus_time=5000):
     """Capture image using rpicam-still command."""
     try:
         cmd = [
             'rpicam-still',
             '-o', output_path,
-            '--width', '4624',   # Good quality without OOM
-            '--height', '3472',  # 16MP - plenty for face detection
-            '-t', '5000',  # 5 seconds for autofocus
+            '-t', str(autofocus_time),
             '-n',  # No preview
             '--autofocus-mode', 'auto',  # Enable autofocus
         ]
+        # Add resolution if specified
+        if width and height:
+            cmd.extend(['--width', str(width), '--height', str(height)])
+        
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
         if result.returncode == 0 and os.path.exists(output_path):
             return True
@@ -216,24 +244,60 @@ def capture_with_rpicam(output_path):
 # ==============================
 # PRINT FUNCTION
 # ==============================
+# Printer paper width in pixels (80mm = 576, 58mm = 384)
+PRINTER_PAPER_WIDTH = 576  # Full paper width
+PRINTER_IMAGE_WIDTH = 500  # Image width (smaller for margins)
+
 def print_image(image_path):
     try:
+        from PIL import Image
+        
+        print(f"🖨️ Attempting to print: {image_path}")
+        
+        # Check if file exists
+        if not os.path.exists(image_path):
+            print(f"❌ File not found: {image_path}")
+            return False
+        
+        # Load and resize image for printer
+        img = Image.open(image_path).convert('L')  # Convert to grayscale
+        print(f"📐 Original size: {img.width}x{img.height}")
+        
+        # Resize to fit printer width
+        if img.width > PRINTER_IMAGE_WIDTH:
+            ratio = PRINTER_IMAGE_WIDTH / img.width
+            new_height = int(img.height * ratio)
+            img = img.resize((PRINTER_IMAGE_WIDTH, new_height), Image.LANCZOS)
+        
+        # Center the image by adding white padding on both sides
+        padding_left = (PRINTER_PAPER_WIDTH - img.width) // 2
+        centered_img = Image.new('L', (PRINTER_PAPER_WIDTH, img.height), 255)  # White background
+        centered_img.paste(img, (padding_left, 0))
+        
+        # Save centered image
+        resized_path = "/tmp/print_resized.bmp"
+        centered_img.save(resized_path)
+        print(f"📏 Centered: {img.width}x{img.height} on {PRINTER_PAPER_WIDTH}px paper")
+        
+        print(f"🖨️ Sending to printer...")
+        
         p = File(PRINTER_DEVICE)
         p._raw(b'\x1B\x40')  # reset
         p.image(
-            image_path,
+            resized_path,
             impl="bitImageRaster",
             high_density_vertical=True,
-            high_density_horizontal=True,
-            center=True
+            high_density_horizontal=True
         )
-        p.text("\n\n")
+        p.text("\n\n\n")
         p.cut()
         p.close()
-        print("🖨️ Printed successfully")
+        print("🖨️ Print command sent!")
         return True
     except Exception as e:
         print(f"❌ Print error: {e}")
+        import traceback
+        traceback.print_exc()
         return False
 
 # ==============================
@@ -286,32 +350,83 @@ def send_image_to_server(image_path, ws_server):
 def do_capture(ws_server):
     global preview_frame
     
-    start_blinking(0.5)
-    time.sleep(1)  # Give user time to pose
-
-    frame = None
-    
-    # Method 1: Use rpicam-still (for libcamera/Arducam)
-    if USE_RPICAM:
-        temp_path = "/tmp/capture_temp.jpg"
-        if capture_with_rpicam(temp_path):
-            frame = cv2.imread(temp_path)
-            try:
-                os.remove(temp_path)
-            except:
-                pass
+    # Step 1: Quick face detection check (no countdown yet)
+    if face_cascade is not None and USE_RPICAM:
+        print("👀 Quick face check...")
+        check_path = "/tmp/face_check.jpg"
         
-        if frame is None:
-            print("❌ rpicam capture failed")
+        # Quick capture for face detection (2 seconds)
+        if not capture_with_rpicam(check_path, width=1280, height=960, autofocus_time=2000):
+            print("❌ Face check capture failed")
             stop_blinking()
             return False
+        
+        check_frame = cv2.imread(check_path)
+        try:
+            os.remove(check_path)
+        except:
+            pass
+        
+        if check_frame is None:
+            print("❌ Failed to load check image")
+            stop_blinking()
+            return False
+        
+        # Check for face (more lenient settings)
+        gray = cv2.cvtColor(check_frame, cv2.COLOR_BGR2GRAY)
+        faces = face_cascade.detectMultiScale(
+            gray,
+            scaleFactor=1.1,
+            minNeighbors=3,      # More lenient (was 5)
+            minSize=(30, 30)     # Detect smaller faces
+        )
+        
+        if len(faces) == 0:
+            # Save debug image to see what camera captured
+            cv2.imwrite("/tmp/face_debug.jpg", check_frame)
+            print("⚠️ No face detected (debug image saved to /tmp/face_debug.jpg)")
+            stop_blinking()
+            return False
+        
+        print(f"✅ Face detected ({len(faces)}), get ready!")
     
-    # Method 2: Use preview frame if available
+    # Step 2: Capture full quality image (with countdown during autofocus)
+    if USE_RPICAM:
+        # Start countdown in background (5 seconds = matches autofocus time)
+        countdown_thread = countdown_beep_async(5)
+        
+        # Capture at good quality (4624x3472 = 16MP) - autofocus runs during countdown
+        if not capture_with_rpicam(IMAGE_PATH, width=4624, height=3472, autofocus_time=5000):
+            print("❌ Full capture failed")
+            stop_blinking()
+            return False
+        print("📸 Captured!")
+    
     elif preview_running and preview_frame is not None:
         with preview_lock:
             frame = preview_frame.copy()
+        
+        # Face check for V4L2
+        if face_cascade is not None:
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            faces = face_cascade.detectMultiScale(gray, 1.1, 5)
+            if len(faces) == 0:
+                print("⚠️ No face detected")
+                stop_blinking()
+                return False
+            print(f"✅ Face detected ({len(faces)}), get ready!")
+        
+        # Countdown with delay before capture
+        countdown_beep_async(5)
+        time.sleep(5)  # Wait for countdown to finish
+        
+        # Re-capture fresh frame after countdown
+        with preview_lock:
+            frame = preview_frame.copy()
+        
+        cv2.imwrite(IMAGE_PATH, frame)
+        print("📸 Captured!")
     
-    # Method 3: Open V4L2 camera directly
     else:
         cap = cv2.VideoCapture(CAMERA_INDEX)
         if not cap.isOpened():
@@ -322,39 +437,45 @@ def do_capture(ws_server):
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, CAMERA_WIDTH)
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, CAMERA_HEIGHT)
         
-        # Flush old frames
         for _ in range(FLUSH_FRAMES):
             cap.read()
             time.sleep(0.05)
         
+        # Quick face check first
+        ret, frame = cap.read()
+        if not ret or frame is None:
+            cap.release()
+            print("❌ Failed to capture frame")
+            stop_blinking()
+            return False
+        
+        # Face check for V4L2
+        if face_cascade is not None:
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            faces = face_cascade.detectMultiScale(gray, 1.1, 5)
+            if len(faces) == 0:
+                cap.release()
+                print("⚠️ No face detected")
+                stop_blinking()
+                return False
+            print(f"✅ Face detected ({len(faces)}), get ready!")
+        
+        # Countdown (5 seconds) while keeping camera open
+        countdown_beep_async(5)
+        time.sleep(5)
+        
+        # Capture final frame after countdown
         ret, frame = cap.read()
         cap.release()
         
         if not ret or frame is None:
-            print("❌ Failed to capture frame")
-            stop_blinking()
-            return False
-
-    # Face detection (if available)
-    if face_cascade is not None:
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        faces = face_cascade.detectMultiScale(gray, 1.1, 5)
-        
-        if len(faces) == 0:
-            print("⚠️ No face detected")
+            print("❌ Failed to capture final frame")
             stop_blinking()
             return False
         
-        # Draw bounding boxes (white for capture)
-        for (x, y, w, h) in faces:
-            cv2.rectangle(frame, (x, y), (x+w, y+h), (255, 255, 255), 3)
-        
-        print(f"📸 Captured with {len(faces)} face(s)")
-    else:
-        print("📸 Captured (no face detection)")
+        cv2.imwrite(IMAGE_PATH, frame)
+        print("📸 Captured!")
 
-    # Save image
-    cv2.imwrite(IMAGE_PATH, frame)
     stop_blinking()
 
     # Send to server and print
@@ -481,6 +602,25 @@ def capture():
         capture_triggered = False
 
 # ==============================
+# KILL PORT FUNCTION
+# ==============================
+def kill_port(port):
+    """Kill any process using the specified port."""
+    try:
+        result = subprocess.run(
+            ['fuser', '-k', f'{port}/tcp'],
+            capture_output=True,
+            timeout=5
+        )
+        if result.returncode == 0:
+            print(f"🔪 Killed process on port {port}")
+            time.sleep(2)  # Wait for port to be released
+            return True
+    except:
+        pass
+    return False
+
+# ==============================
 # MAIN
 # ==============================
 def main():
@@ -499,6 +639,10 @@ def main():
         print("⚠️ Face detection disabled (--no-face)")
 
     app.config['WS_SERVER'] = args.server
+
+    # Kill any existing process on our port
+    print(f"🔍 Checking port {args.port}...")
+    kill_port(args.port)
 
     # Get local IP
     try:
@@ -535,20 +679,28 @@ def main():
         print("⚠️ Preview not supported with rpicam/Arducam")
         print("   Face detection still works during capture")
 
-    # Run Flask server
-    try:
-        app.run(host='0.0.0.0', port=args.port, debug=False, threaded=True)
-    except KeyboardInterrupt:
-        print("\n🛑 Shutting down...")
-    except OSError as e:
-        if "Address already in use" in str(e):
-            print(f"\n❌ Port {args.port} is in use!")
-            print(f"   Run: sudo kill $(sudo lsof -t -i :{args.port})")
-            print(f"   Or use: --port {args.port + 1}")
-    finally:
-        preview_running = False
-        if preview_t and preview_t.is_alive():
-            preview_t.join(timeout=2)
+    # Run Flask server with retry
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            app.run(host='0.0.0.0', port=args.port, debug=False, threaded=True)
+            break  # If successful, exit loop
+        except KeyboardInterrupt:
+            print("\n🛑 Shutting down...")
+            break
+        except OSError as e:
+            if "Address already in use" in str(e):
+                print(f"⚠️ Port {args.port} in use, attempt {attempt + 1}/{max_retries}")
+                kill_port(args.port)
+                time.sleep(3)
+                if attempt == max_retries - 1:
+                    print(f"❌ Failed to start after {max_retries} attempts")
+            else:
+                raise
+    
+    preview_running = False
+    if preview_t and preview_t.is_alive():
+        preview_t.join(timeout=2)
 
 # ==============================
 # START
