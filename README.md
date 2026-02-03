@@ -92,15 +92,21 @@ RASPBERRY_PI_IP=192.168.0.xxx    # ⬅️ Change to your Pi's IP
 RASPBERRY_PI_PORT=5001
 ```
 
-**Run both servers** (in separate terminals):
+**Run the server** (single command):
 
 ```bash
-# Terminal 1 - WebSocket server (receives images, generates receipts)
 cd Server
+python main_server.py
+```
+
+This runs both the WebSocket server and QR scanner server together.
+
+*Alternative: Run separately in two terminals:*
+```bash
+# Terminal 1
 python server.py
 
-# Terminal 2 - QR scanner server (receives phone scans)
-cd Server
+# Terminal 2
 python qr_print_server.py
 ```
 

@@ -9,6 +9,11 @@ Features:
 5. Auto-reconnect if WebSocket fails
 6. Cooldown between captures
 7. Open/close camera per capture to ensure fresh frame
+
+Usage:
+    python 004_qr_printt.py
+    
+Configuration via .env file or command line arguments.
 """
 
 from escpos.printer import File
@@ -22,26 +27,31 @@ from datetime import datetime
 from flask import Flask, jsonify, request
 import socket
 import argparse
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # ==============================
-# CONFIG
+# CONFIG (from .env)
 # ==============================
-PRINTER_DEVICE = "/dev/usb/lp0"
-CAMERA_INDEX = 0
-CAPTURE_COOLDOWN = 5  # seconds cooldown between captures
-FLUSH_FRAMES = 3       # optional flush before capture
+PRINTER_DEVICE = os.getenv('PRINTER_DEVICE', '/dev/usb/lp0')
+CAMERA_INDEX = int(os.getenv('CAMERA_INDEX', 0))
+CAPTURE_COOLDOWN = int(os.getenv('CAPTURE_COOLDOWN', 5))
+FLUSH_FRAMES = 3  # frames to flush before capture
 
 IMAGE_PATH = "capture.jpg"
 OUTPUT_FOLDER = "output"
 
-FACE_CASCADE_PATH = "haarcascade_frontalface_default.xml"  # must be in same folder or full path
+FACE_CASCADE_PATH = "haarcascade_frontalface_default.xml"
 
-HTTP_PORT = 5001  # HTTP trigger port
+HTTP_PORT = int(os.getenv('HTTP_PORT', 5001))
+WS_SERVER_DEFAULT = os.getenv('WS_SERVER', 'ws://192.168.0.116:8765')
 
 # WebSocket reconnect config
-WS_TIMEOUT = 5        # seconds per attempt
-WS_RETRY_DELAY = 3    # seconds between retries
-WS_MAX_RETRIES = 5    # None for infinite retries
+WS_TIMEOUT = 5
+WS_RETRY_DELAY = 3
+WS_MAX_RETRIES = 5
 
 # ==============================
 # GLOBAL STATE
@@ -222,8 +232,8 @@ def trigger_capture():
 # MAIN
 # ==============================
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--server', type=str, default='ws://192.168.0.116:8765', help='WebSocket server URL')
+    parser = argparse.ArgumentParser(description='Raspberry Pi Camera Server with Face Detection')
+    parser.add_argument('--server', type=str, default=WS_SERVER_DEFAULT, help='WebSocket server URL')
     parser.add_argument('--port', type=int, default=HTTP_PORT, help='HTTP port')
     args = parser.parse_args()
 

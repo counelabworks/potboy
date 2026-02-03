@@ -1,10 +1,6 @@
 python-escpos
 pillow
 flask
-
-# pywin32 - only needed on Windows
-# pywin32
-
-# For camera-based QR scanning (optional - only needed for --camera mode)
-# opencv-python
-# pyzbar
+python-dotenv
+websockets
+opencv-python
