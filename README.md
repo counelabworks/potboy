@@ -176,6 +176,8 @@ journalctl -u camera-server.service -f
 |----------|---------|-------------|
 | `--server` | `ws://172.20.10.2:8765` | WebSocket server URL |
 | `--port` | 5001 | HTTP server port |
+| `RPICAM_INDEX` | 1 | Camera port for libcamera (0=CAM0, 1=CAM1) |
+| `CAMERA_INDEX` | 0 | Camera index for USB/V4L2 cameras |
 | `PRINTER_DEVICE` | `/dev/usb/lp0` | Thermal printer device path |
 | `PRINTER_IMAGE_WIDTH` | 500 | Image width for printing (pixels) |
 | `PRINTER_PAPER_WIDTH` | 576 | Paper width for centering (pixels) |
@@ -202,15 +204,26 @@ python generate_capture_qr.py
 ### Camera not working (Arducam/libcamera)
 
 ```bash
-# Check if rpicam-still is available
-rpicam-still --version
+# Check if rpicam is available
+rpicam-hello --version
 
-# Test capture
-rpicam-still -o test.jpg -t 2000
+# List available cameras (shows CAM0, CAM1)
+rpicam-hello --list-cameras
 
-# Check camera detection
-libcamera-hello --list-cameras
+# Test camera preview on CAM0
+rpicam-hello --camera 0
+
+# Test camera preview on CAM1
+rpicam-hello --camera 1
+
+# Test capture on CAM0
+rpicam-still -o test.jpg -t 2000 --camera 0
+
+# Test capture on CAM1 (Raspberry Pi 5 has two ports)
+rpicam-still -o test.jpg -t 2000 --camera 1
 ```
+
+**Note:** Raspberry Pi 5 has two camera ports (CAM0 and CAM1). Put the Arducam in CAM1.
 
 ### Camera not working (USB/V4L2)
 
@@ -315,4 +328,121 @@ sudo reboot
 - **Raspberry Pi 5**
 - **Arducam 64MP Camera** (works with libcamera/rpicam-still)
 - **58mm USB Thermal Printer** (ESC/POS compatible)
-- **Optional**: LED on GPIO 17, Buzzer on GPIO 27
+- **LED** (optional, for visual feedback)
+- **Active Buzzer** (optional, for audio countdown)
+
+### Wiring Photos
+
+**Wiring Diagram:**
+
+![Wiring Diagram](images/wiring.png)
+
+**Implementation:**
+
+![Wiring Implementation](images/wiringImplementation.jpeg)
+
+### Wiring Diagram (Text)
+
+```
+                    Raspberry Pi 5 GPIO
+                    ┌─────────────────────────────────────┐
+                    │  (pin 1)  3.3V    5V   (pin 2)     │
+                    │  (pin 3)  GPIO2   5V   (pin 4)     │
+                    │  (pin 5)  GPIO3   GND  (pin 6)     │
+                    │  (pin 7)  GPIO4   GPIO14 (pin 8)   │
+                    │  (pin 9)  GND     GPIO15 (pin 10)  │
+                    │  (pin 11) GPIO17  GPIO18 (pin 12)  │
+                    │  (pin 13) GPIO27  GND    (pin 14)  │
+                    │  (pin 15) GPIO22  GPIO23 (pin 16)  │◄── BUZZER
+                    │  (pin 17) 3.3V    GPIO24 (pin 18)  │◄── LED
+                    │  (pin 19) GPIO10  GND    (pin 20)  │
+                    │  (pin 21) GPIO9   GPIO25 (pin 22)  │
+                    │  (pin 23) GPIO11  GPIO8  (pin 24)  │
+                    │  (pin 25) GND     GPIO7  (pin 26)  │
+                    │  ... (more pins below)             │
+                    └─────────────────────────────────────┘
+```
+
+### LED Wiring (GPIO 24)
+
+```
+GPIO 24 (pin 18) ──────┬──────[ 330Ω ]────────┐
+                       │                       │
+                       │                      ▼ LED (+)
+                       │                       │
+GND (pin 20) ──────────┴───────────────────────┘ LED (-)
+```
+
+- **GPIO 24** → 330Ω resistor → LED anode (+, longer leg)
+- **LED cathode** (-, shorter leg) → GND
+
+### Active Buzzer Wiring (GPIO 23)
+
+```
+GPIO 23 (pin 16) ──────────────────┐
+                                   │
+                                  ▼ BUZZER (+)
+                                   │
+GND (pin 14 or 20) ────────────────┘ BUZZER (-)
+```
+
+- **GPIO 23** → Buzzer positive (+)
+- **Buzzer negative** (-) → GND
+- Use an **active buzzer** (makes sound when voltage applied)
+
+### Camera Connection (Arducam)
+
+```
+┌─────────────────────────────────────────────────┐
+│              Raspberry Pi 5                      │
+│                                                  │
+│    ┌────────┐              ┌────────┐           │
+│    │  CAM0  │              │  CAM1  │ ◄── Use   │
+│    └────────┘              └────────┘     this  │
+│                                                  │
+└─────────────────────────────────────────────────┘
+         │                        │
+         ▼                        ▼
+    (may not work           Arducam 64MP
+     on some units)         ribbon cable
+```
+
+- Connect Arducam ribbon cable to **CAM1** port
+- Blue side of ribbon faces the USB ports
+- If CAM1 doesn't work, try CAM0 and change `RPICAM_INDEX = 0`
+
+### Thermal Printer Connection
+
+```
+┌─────────────────┐         ┌─────────────────┐
+│  Raspberry Pi   │   USB   │ Thermal Printer │
+│                 │ ══════► │   (58mm/80mm)   │
+│                 │         │   ESC/POS       │
+└─────────────────┘         └─────────────────┘
+                                    │
+                                    ▼
+                             Power adapter
+                              (usually 9V/12V)
+```
+
+- Connect via USB cable
+- Printer appears as `/dev/usb/lp0`
+- Requires separate power supply (not USB powered)
+
+### Complete Wiring Summary
+
+| Component | Connection | GPIO/Port |
+|-----------|------------|-----------|
+| Arducam 64MP | CAM1 ribbon connector | CAM1 |
+| LED | GPIO 24 + 330Ω resistor | Pin 18 |
+| Active Buzzer | GPIO 23 | Pin 16 |
+| Thermal Printer | USB port | /dev/usb/lp0 |
+
+### GPIO Pin Configuration
+
+To change GPIO pins, edit these values in `007_arducam_qr_system.py`:
+
+```python
+LED_PIN = 24      # Physical pin 18
+BUZZER_PIN = 23   # Physical pin 16
+```
