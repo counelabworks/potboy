@@ -141,19 +141,34 @@ else:
 # ==============================
 # LED/BUZZER CONTROL
 # ==============================
-def blink_countdown(seconds, ws_callback=None):
+def notify_server(message_type, value=None):
+    """Send notification to server for browser updates."""
+    try:
+        import requests
+        # Get server URL from ws_server_url (convert wss://host:port to https://host:5000)
+        if ws_server_url:
+            # Extract host from ws URL
+            host = ws_server_url.replace('wss://', '').replace('ws://', '').split(':')[0]
+            url = f"https://{host}:5000/api/notify"
+            data = {'type': message_type}
+            if value is not None:
+                data['value'] = value
+            requests.post(url, json=data, timeout=1, verify=False)
+    except:
+        pass  # Non-critical, don't block capture flow
+
+def blink_countdown(seconds):
     """Blink LED and buzzer for countdown."""
     print(f"⏱️ Countdown: {seconds} seconds...")
+    
+    # Notify server that capture is starting (freeze frame)
+    notify_server('capture_start')
     
     for i in range(seconds, 0, -1):
         print(f"   {i}...")
         
-        # Send countdown to server
-        if ws_callback:
-            try:
-                ws_callback({'type': 'countdown', 'value': i})
-            except:
-                pass
+        # Send countdown to server for browser display
+        notify_server('countdown', i)
         
         # Blink
         if GPIO_ENABLED:
@@ -463,6 +478,9 @@ def do_capture_flow(ws_server):
         # 5. Print receipt
         if not print_receipt(receipt_path):
             return False, "Print failed"
+        
+        # 6. Notify server that print is done
+        notify_server('print_done')
         
         return True, "Captured and printed!"
         

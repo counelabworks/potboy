@@ -668,6 +668,22 @@ async def handle_preview_stop(request):
     return web.json_response({'success': True})
 
 
+async def handle_notify(request):
+    """Receive notifications from Raspberry Pi and broadcast to browsers."""
+    try:
+        data = await request.json()
+        msg_type = data.get('type')
+        
+        if msg_type in ['capture_start', 'countdown', 'capture_done', 'print_done']:
+            print(f"📢 Notification: {msg_type} = {data.get('value', '')}")
+            await broadcast_to_browsers(data)
+            return web.json_response({'success': True})
+        else:
+            return web.json_response({'success': False, 'error': 'Unknown type'}, status=400)
+    except Exception as e:
+        return web.json_response({'success': False, 'error': str(e)}, status=500)
+
+
 async def handle_capture(request):
     """Trigger capture on Raspberry Pi."""
     pi_ip = get_raspberry_pi_ip()
@@ -840,6 +856,7 @@ async def main():
     app.router.add_post('/api/preview/stop', handle_preview_stop)
     app.router.add_get('/api/stream', handle_stream_proxy)  # Proxy stream for HTTPS
     app.router.add_post('/api/capture', handle_capture)
+    app.router.add_post('/api/notify', handle_notify)  # Pi notifications for countdown
     app.router.add_get('/api/status', handle_status)
     
     runner = web.AppRunner(app)
