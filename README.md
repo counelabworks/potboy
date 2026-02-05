@@ -111,11 +111,46 @@ python -m venv venv
 source venv/bin/activate
 
 # Install dependencies
-pip install flask opencv-python websockets python-escpos pillow gpiozero
+pip install flask opencv-python websockets python-escpos pillow gpiozero python-dotenv zeroconf
+
+# For Raspberry Pi 5, also install lgpio for GPIO support
+sudo apt install swig python3-dev
+cd ~ && git clone https://github.com/joan2937/lg && cd lg && make && sudo make install
+cd ~/thermalPrinterRaspy && source venv/bin/activate && pip install lgpio
 
 # Copy files from Client/ folder
 # - 007_arducam_qr_system.py
+# - discovery.py
 # - camera-server.service
+# - .env.example
+# - haarcascade_frontalface_default.xml
+
+# Download face detection model (if not copied)
+wget https://raw.githubusercontent.com/opencv/opencv/master/data/haarcascades/haarcascade_frontalface_default.xml
+```
+
+**Configure the client:**
+
+Option 1: **Using .env file (recommended)**
+```bash
+# Copy example and edit
+cp .env.example .env
+nano .env
+```
+
+Edit `.env`:
+```env
+# Set to "auto" for auto-discovery, or specify IP manually
+WS_SERVER=ws://192.168.137.2:8765
+
+# GPIO pins (optional)
+LED_PIN=24
+BUZZER_PIN=23
+```
+
+Option 2: **Using command line arguments**
+```bash
+python 007_arducam_qr_system.py --server ws://YOUR_SERVER_IP:8765
 ```
 
 **Test the camera server manually:**
@@ -131,9 +166,6 @@ python 007_arducam_qr_system.py --server ws://YOUR_SERVER_IP:8765
 # Copy service file
 sudo cp camera-server.service /etc/systemd/system/
 
-# Edit the service file to match your paths and server IP
-sudo nano /etc/systemd/system/camera-server.service
-
 # Enable and start
 sudo systemctl daemon-reload
 sudo systemctl enable camera-server.service
@@ -142,6 +174,66 @@ sudo systemctl start camera-server.service
 # Check status
 sudo systemctl status camera-server.service
 journalctl -u camera-server.service -f
+```
+
+### Changing Server IP and Restarting Service
+
+**Method 1: Edit .env file (recommended - no service file changes needed)**
+```bash
+cd ~/thermalPrinterRaspy
+
+# Edit the .env file
+nano .env
+# Change: WS_SERVER=ws://NEW_IP:8765
+
+# Restart the service
+sudo systemctl restart camera-server.service
+
+# Verify new IP is being used
+sudo journalctl -u camera-server.service -f
+```
+
+**Method 2: Edit service file directly**
+```bash
+# Edit the service file
+sudo nano /etc/systemd/system/camera-server.service
+
+# Find the ExecStart line and change the --server argument:
+# ExecStart=/home/pi/thermalPrinterRaspy/venv/bin/python -u /home/pi/thermalPrinterRaspy/007_arducam_qr_system.py --server ws://NEW_IP:8765
+
+# Reload and restart
+sudo systemctl daemon-reload
+sudo systemctl restart camera-server.service
+
+# Check status
+sudo systemctl status camera-server.service
+```
+
+**Quick reference - Service commands:**
+```bash
+# Start the service
+sudo systemctl start camera-server.service
+
+# Stop the service
+sudo systemctl stop camera-server.service
+
+# Restart the service (after config changes)
+sudo systemctl restart camera-server.service
+
+# View live logs
+sudo journalctl -u camera-server.service -f
+
+# View last 50 log lines
+journalctl -u camera-server.service -n 50 --no-pager
+
+# Check service status
+sudo systemctl status camera-server.service
+
+# Enable auto-start on boot
+sudo systemctl enable camera-server.service
+
+# Disable auto-start on boot
+sudo systemctl disable camera-server.service
 ```
 
 ### 3. Using the System
@@ -167,27 +259,83 @@ journalctl -u camera-server.service -f
 |----------|---------|-------------|
 | `WEBSOCKET_PORT` | 8765 | WebSocket server port |
 | `QR_SERVER_PORT` | 5000 | HTTPS server for phone scanning |
-| `RASPBERRY_PI_IP` | - | Raspberry Pi's IP address |
+| `RASPBERRY_PI_IP` | `auto` | Raspberry Pi's IP (`auto` = use discovery) |
 | `RASPBERRY_PI_PORT` | 5001 | Raspberry Pi's HTTP port |
 
-### Raspberry Pi (007_arducam_qr_system.py)
+### Raspberry Pi (.env or command line)
+
+**Environment variables (.env file):**
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `--server` | `ws://172.20.10.2:8765` | WebSocket server URL |
-| `--port` | 5001 | HTTP server port |
-| `RPICAM_INDEX` | 1 | Camera port for libcamera (0=CAM0, 1=CAM1) |
+| `WS_SERVER` | `auto` | WebSocket server URL (`auto` = discover automatically) |
+| `HTTP_PORT` | 5001 | HTTP server port |
 | `CAMERA_INDEX` | 0 | Camera index for USB/V4L2 cameras |
+| `RPICAM_INDEX` | 1 | Camera port for libcamera (0=CAM0, 1=CAM1) |
 | `PRINTER_DEVICE` | `/dev/usb/lp0` | Thermal printer device path |
-| `PRINTER_IMAGE_WIDTH` | 500 | Image width for printing (pixels) |
-| `PRINTER_PAPER_WIDTH` | 576 | Paper width for centering (pixels) |
+| `LED_PIN` | 24 | GPIO pin for LED |
+| `BUZZER_PIN` | 23 | GPIO pin for buzzer |
+
+**Command line arguments:**
+
+| Argument | Default | Description |
+|----------|---------|-------------|
+| `--server` | from .env or auto | WebSocket server URL |
+| `--port` | 5001 | HTTP server port |
+| `--preview` | off | Show live camera preview |
+| `--no-face` | off | Disable face detection requirement |
+| `--no-discovery` | off | Disable auto-discovery |
+
+**Example usage:**
+```bash
+# Auto-discover server (default)
+python 007_arducam_qr_system.py
+
+# Manual server IP
+python 007_arducam_qr_system.py --server ws://192.168.1.100:8765
+
+# With camera preview (USB cameras only)
+python 007_arducam_qr_system.py --preview
+
+# Skip face detection
+python 007_arducam_qr_system.py --no-face
+```
+
+### Auto-Discovery
+
+The system supports **mDNS auto-discovery** - no manual IP configuration needed!
+
+- Server broadcasts itself on the network
+- Client (Pi) automatically finds the server
+- Falls back to manual IP from `.env` if discovery fails
+
+**Requirements for auto-discovery:**
+```bash
+# On Raspberry Pi
+pip install zeroconf
+sudo apt install avahi-daemon
+
+# On Server (Windows/Mac/Linux)
+pip install zeroconf
+```
+
+**To disable auto-discovery**, set explicit IPs in `.env`:
+```env
+# Server .env
+RASPBERRY_PI_IP=192.168.1.100
+
+# Client .env
+WS_SERVER=ws://192.168.1.50:8765
+```
 
 ### Systemd Service (camera-server.service)
 
-Edit `/etc/systemd/system/camera-server.service` to configure:
+The service file is located at `/etc/systemd/system/camera-server.service`.
+
+Key settings:
 - `WorkingDirectory` - Path to your script folder
-- `ExecStart` - Python path and server URL
-- `User` - Set to `root` for GPIO access
+- `ExecStart` - Python path and script (uses .env for config)
+- `User` - Set to `root` for GPIO and printer access
 
 ## QR Code
 

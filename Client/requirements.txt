@@ -4,3 +4,4 @@ flask
 python-dotenv
 websockets
 opencv-python
+zeroconf

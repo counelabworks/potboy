@@ -54,8 +54,7 @@ import threading
 # CONFIG (edit these directly)
 # ==============================
 PRINTER_DEVICE = '/dev/usb/lp0'
-CAMERA_INDEX = 0         # For V4L2/USB cameras (OpenCV)
-RPICAM_INDEX = 1         # For libcamera: 0=CAM0, 1=CAM1 (Raspberry Pi 5 has CAM0 and CAM1)
+CAMERA_INDEX = 0
 CAPTURE_COOLDOWN = 5
 FLUSH_FRAMES = 3
 
@@ -224,7 +223,6 @@ def capture_with_rpicam(output_path, width=None, height=None, autofocus_time=500
             '-o', output_path,
             '-t', str(autofocus_time),
             '-n',  # No preview
-            '--camera', str(RPICAM_INDEX),  # Select camera port (0=CAM0, 1=CAM1)
             '--autofocus-mode', 'auto',  # Enable autofocus
         ]
         # Add resolution if specified
