@@ -399,10 +399,16 @@ def send_to_server_sync(image_path, ws_server):
 # ==============================
 # PRINT FUNCTION
 # ==============================
+# USB Printer settings (POS80) - find with: lsusb
+PRINTER_USB_VENDOR = int(os.getenv('PRINTER_USB_VENDOR', '0x0416'), 16)
+PRINTER_USB_PRODUCT = int(os.getenv('PRINTER_USB_PRODUCT', '0x5011'), 16)
+PRINTER_USB_IN_EP = int(os.getenv('PRINTER_USB_IN_EP', '0x81'), 16)
+PRINTER_USB_OUT_EP = int(os.getenv('PRINTER_USB_OUT_EP', '0x03'), 16)
+
 def print_receipt(image_path):
-    """Print receipt on thermal printer."""
+    """Print receipt on thermal printer via USB."""
     try:
-        from escpos.printer import File
+        from escpos.printer import Usb
         from PIL import Image
         
         if not os.path.exists(image_path):
@@ -412,12 +418,13 @@ def print_receipt(image_path):
         # Load and resize image
         img = Image.open(image_path).convert('L')
         
+        # Scale to fit printer width while maintaining aspect ratio
         if img.width > PRINTER_IMAGE_WIDTH:
             ratio = PRINTER_IMAGE_WIDTH / img.width
             new_height = int(img.height * ratio)
             img = img.resize((PRINTER_IMAGE_WIDTH, new_height), Image.LANCZOS)
         
-        # Center image
+        # Center image on paper (576 pixel paper width)
         padding_left = (PRINTER_PAPER_WIDTH - img.width) // 2
         centered_img = Image.new('L', (PRINTER_PAPER_WIDTH, img.height), 255)
         centered_img.paste(img, (padding_left, 0))
@@ -426,10 +433,11 @@ def print_receipt(image_path):
         temp_path = "/tmp/print_receipt.bmp"
         centered_img.save(temp_path)
         
-        # Print
-        print(f"🖨️ Printing receipt...")
-        p = File(PRINTER_DEVICE)
-        p._raw(b'\x1B\x40')  # Reset
+        # Print via USB
+        print(f"🖨️ Printing receipt via USB...")
+        p = Usb(PRINTER_USB_VENDOR, PRINTER_USB_PRODUCT, 
+                in_ep=PRINTER_USB_IN_EP, out_ep=PRINTER_USB_OUT_EP)
+        p._raw(b'\x1B\x40')  # Reset printer
         p.image(temp_path, impl="bitImageRaster",
                 high_density_vertical=True, high_density_horizontal=True)
         p.text("\n\n\n")
@@ -441,6 +449,8 @@ def print_receipt(image_path):
         
     except Exception as e:
         print(f"❌ Print error: {e}")
+        import traceback
+        traceback.print_exc()
         return False
 
 # ==============================

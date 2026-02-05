@@ -27,9 +27,17 @@ Thumbs.db
 server.crt
 server.key
 
-# Output folders (optional - uncomment if you don't want to track these)
-# Server/received_images/
-# Server/output/
-# Server/qr_codes/
-# Client/output/
-# Client/images/
+# Output folders (captured images, receipts)
+Server/received_images/*
+Server/output/*
+Server/images/*
+Server/qr_codes/*
+Client/output/*
+Client/images/*
+
+# Keep folder structure
+!**/.gitkeep
+
+# Debug files
+face_debug.jpg
+*.bmp
