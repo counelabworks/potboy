@@ -6,3 +6,4 @@ pyOpenSSL
 requests
 python-dotenv
 aiohttp
+zeroconf

@@ -30,7 +30,7 @@ load_dotenv()
 
 WEBSOCKET_PORT = int(os.getenv('WEBSOCKET_PORT', 8765))
 QR_SERVER_PORT = int(os.getenv('QR_SERVER_PORT', 5000))
-RASPBERRY_PI_IP = os.getenv('RASPBERRY_PI_IP', '192.168.0.100')
+RASPBERRY_PI_IP = os.getenv('RASPBERRY_PI_IP', '100.102.29.90')
 RASPBERRY_PI_PORT = int(os.getenv('RASPBERRY_PI_PORT', 5001))
 
 # ==========================================
