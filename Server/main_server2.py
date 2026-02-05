@@ -748,12 +748,13 @@ async def websocket_handler(ws):
                 else:
                     photo_bytes = base64.b64decode(message.decode())
                 
-                # Save image
-                os.makedirs("received_images", exist_ok=True)
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                with open(f"received_images/{timestamp}.jpg", "wb") as f:
+                # Save image with timestamp (never overwrite)
+                os.makedirs("images", exist_ok=True)
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+                image_path = f"images/capture_{timestamp}.jpg"
+                with open(image_path, "wb") as f:
                     f.write(photo_bytes)
-                print(f"💾 Saved: received_images/{timestamp}.jpg")
+                print(f"💾 Saved: {image_path}")
                 
                 # Create receipt (for now just the photo)
                 receipt_bytes = make_receipt(photo_bytes)
