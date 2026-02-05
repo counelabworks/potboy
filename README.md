@@ -1,474 +1,221 @@
-# Potboy - QR Code Triggered Photo Booth
+# Potboy - Photo Booth with Live Preview
 
-A photo booth system where scanning a QR code triggers a Raspberry Pi camera (Arducam) to capture a photo, sends it to a server for processing, and prints the result on a thermal printer.
+A photo booth system with live video preview on a web UI. Click to capture photos from a Raspberry Pi camera (Arducam), and print receipts on a thermal printer.
 
-## Architecture
-
-```
-📱 Phone                    💻 Laptop (Server)              🍓 Raspberry Pi (Client)
-┌─────────────┐            ┌─────────────────────┐         ┌─────────────────────────┐
-│             │            │                     │         │                         │
-│ Scan QR     │───────────▶│   main_server.py    │────────▶│ 007_arducam_qr_system.py│
-│ (CAPTURE)   │  HTTPS     │   (port 5000)       │  HTTP   │      (port 5001)        │
-│             │            │                     │         │                         │
-└─────────────┘            │  Triggers capture   │         │  1. Face detection      │
-                           └─────────────────────┘         │  2. Countdown + Focus   │
-                                                           │  3. Capture photo       │
-                           ┌─────────────────────┐         │  4. Send to server      │
-                           │                     │         └───────────┬─────────────┘
-                           │   main_server.py    │◀────────────────────┘
-                           │  WebSocket (8765)   │         WebSocket (image)
-                           │                     │
-                           │  1. Receive image   │─────────────────────┐
-                           │  2. Process/save    │                     │
-                           │  3. Send back       │                     ▼
-                           └─────────────────────┘         ┌─────────────────────────┐
-                                                           │     Raspberry Pi        │
-                                                           │                         │
-                                                           │  5. Receive processed   │
-                                                           │  6. Print on thermal    │
-                                                           │     printer             │
-                                                           └─────────────────────────┘
-```
-
-## Features
-
-- **QR Code Trigger**: Scan a QR code with your phone to trigger photo capture
-- **Face Detection Trigger**: Only captures when a face is detected (face detection as trigger, no bounding boxes on final photo)
-- **Countdown with Beeps**: 5-second countdown with LED/buzzer feedback while camera focuses
-- **Arducam Support**: Uses `rpicam-still` for Arducam/libcamera on Raspberry Pi 5
-- **High Resolution**: Captures at 16MP (4624x3472) for quality prints
-- **Thermal Printing**: Automatically resizes and prints on thermal printer
-- **Auto-Start Service**: Systemd service for boot-time startup
-- **Auto-Reconnect**: WebSocket connection auto-reconnects on failure
-
-## Project Structure
+## Architecture (v2 - Web UI)
 
 ```
-potboy/
-├── Server/                          # Runs on Laptop/PC
-│   ├── main_server.py               # ⬅️ Main server (WebSocket + QR scanner)
-│   ├── receipt_generator.py         # Image processing
-│   ├── generate_capture_qr.py       # Generates the CAPTURE QR code
-│   ├── capture_qr.png               # ⬅️ THE QR CODE - scan this to trigger
-│   ├── requirements.txt
-│   ├── received_images/             # Captured photos from Raspberry Pi
-│   └── output/                      # Processed images
-│
-├── Client/                          # Runs on Raspberry Pi
-│   ├── 007_arducam_qr_system.py     # ⬅️ Main script - Arducam camera server
-│   ├── camera-server.service        # Systemd service file for auto-start
-│   ├── requirements.txt
-│   ├── print_image.py               # Printer test utility
-│   └── list_printers.py             # List available printers
-│
-├── .env.example                     # Server configuration template
-└── README.md
+💻 Laptop (Server)                           🍓 Raspberry Pi (Client)
+┌─────────────────────────────────────┐     ┌─────────────────────────────┐
+│       main_server2.py               │     │    008_main_client.py       │
+│                                     │     │                             │
+│  🌐 Web UI (https://IP:5000)        │     │  📷 Camera (Arducam 64MP)   │
+│  ┌─────────────────────────────┐    │     │  🎥 MJPEG streaming         │
+│  │  [Start Preview]  [Capture] │    │     │  💡 LED + 🔊 Buzzer         │
+│  │  ┌───────────────────────┐  │    │     │  🖨️ Thermal printer         │
+│  │  │    Live Video Feed    │  │    │     │                             │
+│  │  │      from Pi          │  │    │     │  HTTP endpoints:            │
+│  │  └───────────────────────┘  │    │     │  - /preview/start           │
+│  └─────────────────────────────┘    │     │  - /preview/stop            │
+│                                     │     │  - /stream (MJPEG)          │
+│  HTTP ──────────────────────────────┼────▶│  - /capture                 │
+│       (trigger preview/capture)     │     │                             │
+│                                     │     └──────────────┬──────────────┘
+│  WebSocket (wss://IP:8765) ◀────────┼────────────────────┘
+│       (receive image, send receipt) │       (captured photo)
+│                                     │
+└─────────────────────────────────────┘
 ```
 
-## Setup
+## Quick Start
 
-### 1. Server Setup (Laptop/PC)
+### 1. Server (Windows/Mac/Linux)
 
+**Configure `.env`:**
 ```bash
 cd Server
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Generate the QR code (if not exists)
-python generate_capture_qr.py
-# Creates: capture_qr.png
+cp .env.example .env
 ```
 
-**Configure `.env`** in the Server folder:
+Edit `Server/.env`:
 ```env
-# Server Configuration
 WEBSOCKET_PORT=8765
 QR_SERVER_PORT=5000
-
-# Raspberry Pi Configuration
-RASPBERRY_PI_IP=192.168.0.xxx    # ⬅️ Change to your Pi's IP
+RASPBERRY_PI_IP=192.168.0.xxx    # ⬅️ Your Pi's IP address
 RASPBERRY_PI_PORT=5001
 ```
 
-**Run the server:**
-
+**Run:**
 ```bash
 cd Server
-python main_server.py
+pip install -r requirements.txt
+python main_server2.py
 ```
 
-### 2. Raspberry Pi Setup
+Open `https://YOUR_PC_IP:5000` in your browser.
 
+---
+
+### 2. Raspberry Pi (Client)
+
+**Configure `.env`:**
 ```bash
-# Create working directory
-mkdir -p ~/thermalPrinterRaspy
 cd ~/thermalPrinterRaspy
-
-# Create virtual environment
-python -m venv venv
-source venv/bin/activate
-
-# Install dependencies
-pip install flask opencv-python websockets python-escpos pillow gpiozero python-dotenv zeroconf
-
-# For Raspberry Pi 5, also install lgpio for GPIO support
-sudo apt install swig python3-dev
-cd ~ && git clone https://github.com/joan2937/lg && cd lg && make && sudo make install
-cd ~/thermalPrinterRaspy && source venv/bin/activate && pip install lgpio
-
-# Copy files from Client/ folder
-# - 007_arducam_qr_system.py
-# - discovery.py
-# - camera-server.service
-# - .env.example
-# - haarcascade_frontalface_default.xml
-
-# Download face detection model (if not copied)
-wget https://raw.githubusercontent.com/opencv/opencv/master/data/haarcascades/haarcascade_frontalface_default.xml
-```
-
-**Configure the client:**
-
-Option 1: **Using .env file (recommended)**
-```bash
-# Copy example and edit
 cp .env.example .env
 nano .env
 ```
 
 Edit `.env`:
 ```env
-# Set to "auto" for auto-discovery, or specify IP manually
-WS_SERVER=ws://192.168.137.2:8765
+# WebSocket server (use wss:// for SSL)
+WS_SERVER=wss://192.168.0.xxx:8765    # ⬅️ Your server's IP address
 
-# GPIO pins (optional)
+# Camera settings
+RPICAM_INDEX=0                         # Camera port (0 or 1)
+
+# GPIO pins
 LED_PIN=24
 BUZZER_PIN=23
 ```
 
-Option 2: **Using command line arguments**
-```bash
-python 007_arducam_qr_system.py --server ws://YOUR_SERVER_IP:8765
-```
-
-**Test the camera server manually:**
-
+**Run manually (for testing):**
 ```bash
 source venv/bin/activate
-python 007_arducam_qr_system.py --server ws://YOUR_SERVER_IP:8765
+python 008_main_client.py
 ```
 
-**Set up auto-start service:**
-
+**Run as service (auto-start on boot):**
 ```bash
-# Copy service file
-sudo cp camera-server.service /etc/systemd/system/
-
-# Enable and start
-sudo systemctl daemon-reload
-sudo systemctl enable camera-server.service
-sudo systemctl start camera-server.service
-
-# Check status
-sudo systemctl status camera-server.service
-journalctl -u camera-server.service -f
-```
-
-### Changing Server IP and Restarting Service
-
-**Method 1: Edit .env file (recommended - no service file changes needed)**
-```bash
-cd ~/thermalPrinterRaspy
-
-# Edit the .env file
-nano .env
-# Change: WS_SERVER=ws://NEW_IP:8765
-
-# Restart the service
-sudo systemctl restart camera-server.service
-
-# Verify new IP is being used
-sudo journalctl -u camera-server.service -f
-```
-
-**Method 2: Edit service file directly**
-```bash
-# Edit the service file
+# Edit service file to use 008_main_client.py
 sudo nano /etc/systemd/system/camera-server.service
-
-# Find the ExecStart line and change the --server argument:
-# ExecStart=/home/pi/thermalPrinterRaspy/venv/bin/python -u /home/pi/thermalPrinterRaspy/007_arducam_qr_system.py --server ws://NEW_IP:8765
-
-# Reload and restart
-sudo systemctl daemon-reload
-sudo systemctl restart camera-server.service
-
-# Check status
-sudo systemctl status camera-server.service
 ```
 
-**Quick reference - Service commands:**
+Set `ExecStart` to:
+```ini
+ExecStart=/home/pi/thermalPrinterRaspy/venv/bin/python -u /home/pi/thermalPrinterRaspy/008_main_client.py
+```
+
+Then:
 ```bash
-# Start the service
-sudo systemctl start camera-server.service
-
-# Stop the service
-sudo systemctl stop camera-server.service
-
-# Restart the service (after config changes)
-sudo systemctl restart camera-server.service
-
-# View live logs
-sudo journalctl -u camera-server.service -f
-
-# View last 50 log lines
-journalctl -u camera-server.service -n 50 --no-pager
-
-# Check service status
-sudo systemctl status camera-server.service
-
-# Enable auto-start on boot
+sudo systemctl daemon-reload
 sudo systemctl enable camera-server.service
-
-# Disable auto-start on boot
-sudo systemctl disable camera-server.service
+sudo systemctl start camera-server.service
 ```
 
-### 3. Using the System
+---
 
-1. **Print or display `Server/capture_qr.png`** - this is the QR code
-2. **Open your phone browser** and go to `https://YOUR_SERVER_IP:5000`
-3. **Accept the security warning** (self-signed certificate)
-4. **Allow camera access**
-5. **Scan the QR code** with your phone
-6. The Raspberry Pi will:
-   - Quick face detection check (~2 seconds)
-   - If face found: 5-second countdown with beeps + autofocus
-   - Capture high-resolution photo
-   - Send to server via WebSocket
-   - Receive processed image
-   - Print on thermal printer
+## Usage
 
-## Configuration
+1. **Start server** on your PC: `python main_server2.py`
+2. **Start client** on Pi (or ensure service is running)
+3. Open `https://YOUR_SERVER_IP:5000` in browser
+4. Click **Start Preview** to see live video
+5. Click **Capture** to take photo
+   - 5-second countdown with LED/buzzer
+   - Photo captured and sent to server
+   - Receipt printed on thermal printer
 
-### Server (.env)
+---
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `WEBSOCKET_PORT` | 8765 | WebSocket server port |
-| `QR_SERVER_PORT` | 5000 | HTTPS server for phone scanning |
-| `RASPBERRY_PI_IP` | `auto` | Raspberry Pi's IP (`auto` = use discovery) |
-| `RASPBERRY_PI_PORT` | 5001 | Raspberry Pi's HTTP port |
+## Configuration Reference
 
-### Raspberry Pi (.env or command line)
-
-**Environment variables (.env file):**
+### Server `.env`
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `WS_SERVER` | `auto` | WebSocket server URL (`auto` = discover automatically) |
+| `WEBSOCKET_PORT` | 8765 | WebSocket port (wss://) |
+| `QR_SERVER_PORT` | 5000 | HTTPS web UI port |
+| `RASPBERRY_PI_IP` | - | Pi's IP address |
+| `RASPBERRY_PI_PORT` | 5001 | Pi's HTTP port |
+
+### Client `.env`
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `WS_SERVER` | - | Server WebSocket URL (wss://IP:8765) |
 | `HTTP_PORT` | 5001 | HTTP server port |
-| `CAMERA_INDEX` | 0 | Camera index for USB/V4L2 cameras |
-| `RPICAM_INDEX` | 1 | Camera port for libcamera (0=CAM0, 1=CAM1) |
-| `PRINTER_DEVICE` | `/dev/usb/lp0` | Thermal printer device path |
+| `RPICAM_INDEX` | 0 | Camera index (0=CAM0, 1=CAM1) |
 | `LED_PIN` | 24 | GPIO pin for LED |
 | `BUZZER_PIN` | 23 | GPIO pin for buzzer |
+| `PRINTER_DEVICE` | /dev/usb/lp0 | Thermal printer path |
 
-**Command line arguments:**
+---
 
-| Argument | Default | Description |
-|----------|---------|-------------|
-| `--server` | from .env or auto | WebSocket server URL |
-| `--port` | 5001 | HTTP server port |
-| `--preview` | off | Show live camera preview |
-| `--no-face` | off | Disable face detection requirement |
-| `--no-discovery` | off | Disable auto-discovery |
+## Common Commands
 
-**Example usage:**
+### Raspberry Pi Service
+
 ```bash
-# Auto-discover server (default)
-python 007_arducam_qr_system.py
+# Start/stop/restart
+sudo systemctl start camera-server.service
+sudo systemctl stop camera-server.service
+sudo systemctl restart camera-server.service
 
-# Manual server IP
-python 007_arducam_qr_system.py --server ws://192.168.1.100:8765
+# View logs
+sudo journalctl -u camera-server.service -f
 
-# With camera preview (USB cameras only)
-python 007_arducam_qr_system.py --preview
-
-# Skip face detection
-python 007_arducam_qr_system.py --no-face
+# After changing .env, just restart:
+sudo systemctl restart camera-server.service
 ```
 
-### Auto-Discovery
+### Changing IP Addresses
 
-The system supports **mDNS auto-discovery** - no manual IP configuration needed!
-
-- Server broadcasts itself on the network
-- Client (Pi) automatically finds the server
-- Falls back to manual IP from `.env` if discovery fails
-
-**Requirements for auto-discovery:**
+**Server IP changed?** Edit Pi's `.env`:
 ```bash
-# On Raspberry Pi
-pip install zeroconf
-sudo apt install avahi-daemon
-
-# On Server (Windows/Mac/Linux)
-pip install zeroconf
+nano ~/thermalPrinterRaspy/.env
+# Change: WS_SERVER=wss://NEW_SERVER_IP:8765
+sudo systemctl restart camera-server.service
 ```
 
-**To disable auto-discovery**, set explicit IPs in `.env`:
-```env
-# Server .env
-RASPBERRY_PI_IP=192.168.1.100
-
-# Client .env
-WS_SERVER=ws://192.168.1.50:8765
-```
-
-### Systemd Service (camera-server.service)
-
-The service file is located at `/etc/systemd/system/camera-server.service`.
-
-Key settings:
-- `WorkingDirectory` - Path to your script folder
-- `ExecStart` - Python path and script (uses .env for config)
-- `User` - Set to `root` for GPIO and printer access
-
-## QR Code
-
-The QR code (`Server/capture_qr.png`) contains the text `CAPTURE`.
-
-To regenerate:
+**Pi IP changed?** Edit Server's `.env`:
 ```bash
-cd Server
-python generate_capture_qr.py
+# Edit Server/.env
+# Change: RASPBERRY_PI_IP=NEW_PI_IP
+# Restart server
 ```
+
+---
 
 ## Troubleshooting
 
-### Camera not working (Arducam/libcamera)
-
+### Camera "not available" error
 ```bash
-# Check if rpicam is available
-rpicam-hello --version
-
-# List available cameras (shows CAM0, CAM1)
-rpicam-hello --list-cameras
-
-# Test camera preview on CAM0
-rpicam-hello --camera 0
-
-# Test camera preview on CAM1
-rpicam-hello --camera 1
-
-# Test capture on CAM0
-rpicam-still -o test.jpg -t 2000 --camera 0
-
-# Test capture on CAM1 (Raspberry Pi 5 has two ports)
-rpicam-still -o test.jpg -t 2000 --camera 1
+# Kill stuck camera processes
+sudo pkill -9 rpicam
+sudo systemctl restart camera-server.service
 ```
 
-**Note:** Raspberry Pi 5 has two camera ports (CAM0 and CAM1). Put the Arducam in CAM1.
+### Preview not showing
+1. Check Pi logs: `sudo journalctl -u camera-server.service -f`
+2. Test stream directly: `curl -s http://PI_IP:5001/stream --max-time 3 | wc -c`
+3. Should return bytes > 0
 
-### Camera not working (USB/V4L2)
+### WebSocket SSL error
+Make sure Pi's `.env` uses `wss://` (not `ws://`):
+```env
+WS_SERVER=wss://192.168.0.xxx:8765
+```
 
+### GPIO busy
 ```bash
-# Check if camera is detected
-ls /dev/video*
-
-# Test camera with OpenCV
-python -c "import cv2; print(cv2.VideoCapture(0).isOpened())"
+sudo systemctl stop camera-server.service
+sudo pkill -9 rpicam
+sudo systemctl start camera-server.service
 ```
 
 ### Printer not working
-
 ```bash
-# Check if printer is detected
-ls /dev/usb/lp*
-
-# Test print
-echo "Test" > /dev/usb/lp0
-
-# Add user to lp group (if not running as root)
-sudo usermod -a -G lp $USER
-sudo reboot
+ls /dev/usb/lp*          # Check printer detected
+echo "Test" > /dev/usb/lp0   # Test print
 ```
 
-### Port 5001 already in use
-
+### Test camera manually
 ```bash
-# Find what's using the port
-sudo lsof -i :5001
-
-# Kill the process
-sudo fuser -k 5001/tcp
-
-# Restart the service
-sudo systemctl restart camera-server.service
+rpicam-hello --list-cameras  # List cameras
+rpicam-still -o test.jpg     # Test capture
 ```
 
-### Service not starting
-
-```bash
-# Check service status
-sudo systemctl status camera-server.service
-
-# View logs
-journalctl -u camera-server.service -n 50 --no-pager
-
-# Restart after changes
-sudo systemctl daemon-reload
-sudo systemctl restart camera-server.service
-```
-
-### GPIO busy error
-
-```bash
-# Run service as root (edit service file)
-User=root
-
-# Or add user to gpio group
-sudo usermod -a -G gpio $USER
-sudo reboot
-```
-
-### Phone can't access camera (browser)
-
-- Make sure you're using `https://` not `http://`
-- Accept the security warning for the self-signed certificate
-- Check that the server and phone are on the same WiFi network
-
-### WebSocket connection fails
-
-- Check that `main_server.py` is running on the laptop
-- Verify the IP address in the `--server` argument
-- Check firewall settings
-
-## Requirements
-
-### Server
-- Python 3.8+
-- websockets
-- pillow
-- flask
-- pyOpenSSL
-- python-dotenv
-- aiohttp
-- qrcode
-
-### Raspberry Pi
-- Python 3.8+
-- Raspberry Pi OS with libcamera support
-- rpicam-still (for Arducam/libcamera cameras)
-- opencv-python
-- websockets
-- flask
-- python-escpos
-- pillow
-- gpiozero (for LED/buzzer feedback)
+---
 
 ## Hardware
 
@@ -588,9 +335,9 @@ GND (pin 14 or 20) ────────────────┘ BUZZER (-
 
 ### GPIO Pin Configuration
 
-To change GPIO pins, edit these values in `007_arducam_qr_system.py`:
+To change GPIO pins, edit `.env` on the Raspberry Pi:
 
-```python
-LED_PIN = 24      # Physical pin 18
-BUZZER_PIN = 23   # Physical pin 16
+```env
+LED_PIN=24       # Physical pin 18
+BUZZER_PIN=23    # Physical pin 16
 ```
