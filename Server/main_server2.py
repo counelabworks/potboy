@@ -361,6 +361,7 @@ WEB_UI_HTML = """
                     <div>Press Start Preview to connect</div>
                 </div>
             </div>
+            <canvas id="frozenFrame" style="display:none; width:100%; height:100%; object-fit:cover;"></canvas>
             <div class="overlay" id="overlay"></div>
             <div class="countdown" id="countdown"></div>
         </div>
@@ -412,20 +413,55 @@ WEB_UI_HTML = """
             };
         }
         
+        function freezeFrame() {
+            const container = document.getElementById('videoContainer');
+            const img = container.querySelector('img');
+            const canvas = document.getElementById('frozenFrame');
+            
+            if (img && img.complete) {
+                // Freeze current frame
+                canvas.width = img.naturalWidth || 640;
+                canvas.height = img.naturalHeight || 480;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0);
+                
+                // Hide video, show frozen frame
+                container.style.display = 'none';
+                canvas.style.display = 'block';
+            }
+        }
+        
+        function unfreezeFrame() {
+            const container = document.getElementById('videoContainer');
+            const canvas = document.getElementById('frozenFrame');
+            
+            container.style.display = 'block';
+            canvas.style.display = 'none';
+        }
+        
         function handleMessage(data) {
             switch(data.type) {
                 case 'countdown':
                     showCountdown(data.value);
                     break;
                 case 'capture_start':
-                    setStatus('Capturing...', '');
+                    freezeFrame();  // Freeze the preview
+                    setStatus('Get ready!', '');
                     break;
                 case 'capture_done':
-                    setStatus('Photo captured! Processing...', 'success');
+                    setStatus('Photo captured! Printing...', 'success');
                     hideCountdown();
                     break;
                 case 'print_done':
-                    setStatus('Receipt printed!', 'success');
+                    setStatus('Receipt printed! Click Preview to continue', 'success');
+                    unfreezeFrame();
+                    // Reset preview state
+                    previewActive = false;
+                    const btn = document.getElementById('btnPreview');
+                    btn.innerHTML = '<span>▶</span> Start Preview';
+                    btn.classList.remove('btn-stop');
+                    btn.classList.add('btn-preview');
+                    document.getElementById('btnCapture').classList.remove('visible');
                     break;
                 case 'error':
                     setStatus(data.message, 'error');

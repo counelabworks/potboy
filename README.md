@@ -85,18 +85,25 @@ python 008_main_client.py
 ```
 
 **Run as service (auto-start on boot):**
+
+First, copy the service file from your PC to the Pi:
 ```bash
-# Edit service file to use 008_main_client.py
+# From your PC (Windows PowerShell or Mac/Linux terminal)
+scp Client/camera-server.service pi@PI_IP:/tmp/
+
+# Or with full path on Windows:
+scp c:\sapi\CLW\potboy\Client\camera-server.service pi@PI_IP:/tmp/
+```
+
+Then on the Pi:
+```bash
+# Move service file to systemd
+sudo mv /tmp/camera-server.service /etc/systemd/system/
+
+# Edit if needed (verify paths)
 sudo nano /etc/systemd/system/camera-server.service
-```
 
-Set `ExecStart` to:
-```ini
-ExecStart=/home/pi/thermalPrinterRaspy/venv/bin/python -u /home/pi/thermalPrinterRaspy/008_main_client.py
-```
-
-Then:
-```bash
+# Enable and start
 sudo systemctl daemon-reload
 sudo systemctl enable camera-server.service
 sudo systemctl start camera-server.service
