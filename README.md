@@ -243,6 +243,22 @@ rpicam-still -o test.jpg     # Test capture
 
 ![Wiring Implementation](images/wiringImplementation.jpeg)
 
+### Installation & Mounting
+
+![Installation](images/installation.jpeg)
+
+**Bolt/Screw Requirements:**
+
+| Component | Bolt Size | Quantity |
+|-----------|-----------|----------|
+| **Camera (Arducam)** | M3×40mm | 1 |
+| | M2.5×10mm | 4 |
+| | M3×12mm | 2 |
+| **PSU (Power Supply)** | M3×12mm | 2 |
+| **Raspberry Pi 5** | M2.5×30mm | 4 |
+| **Printer (POS-80)** | M3×12mm | 4 |
+| | M3×25mm | 5 |
+
 ### Wiring Diagram (Text)
 
 ```
