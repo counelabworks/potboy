@@ -245,7 +245,7 @@ rpicam-still -o test.jpg     # Test capture
 
 ### Installation & Mounting
 
-![Installation](images/installation.jpeg)
+![Installation](images/Installation.jpeg)
 
 **Bolt/Screw Requirements:**
 
