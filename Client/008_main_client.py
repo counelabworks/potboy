@@ -57,7 +57,7 @@ CAMERA_INDEX = int(os.getenv('CAMERA_INDEX', 0))
 _ws_config = os.getenv('WS_SERVER', 'auto').strip()
 WS_SERVER_DEFAULT = None if _ws_config.lower() == 'auto' else _ws_config
 
-WS_TIMEOUT = 10
+WS_TIMEOUT = 5
 COUNTDOWN_SECONDS = 5
 
 LED_PIN = int(os.getenv('LED_PIN', 24))
